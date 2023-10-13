@@ -129,6 +129,7 @@ def load_dictionary(dname, cmuformat=True):
                 else:
                     mapping[word].append(pronunciation)
                     
+        mapping['sil'] = [['H#'], []]
         return mapping
         
     else:

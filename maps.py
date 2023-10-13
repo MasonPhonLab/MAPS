@@ -1,3 +1,5 @@
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 from textgrid import textgrid
 from tensorflow.keras.models import load_model
 from scipy.io import wavfile
@@ -8,9 +10,12 @@ from tqdm import tqdm
 import statistics
 import tensorflow as tf
 import python_speech_features as psf
-from utils import align, collapse
+from utils import align, collapse, load_dictionary
 import itertools
 from pathlib import Path
+import re
+import sys
+from args import build_arg_parser
 
 FRAME_LENGTH = 0.025 # 25 ms expressed as seconds
 FRAME_INTERVAL = 0.01 # 10 ms expressed as seconds
@@ -37,10 +42,11 @@ class WordString:
         self.words = words
         self.pronunciations = pronunciations
         
-        self.phone_string = itertools.chain(pronunciations)
-        self.collapsed_string = itertools.chain(collapse(p) for p in pronunciations)
+        self.phone_string = list(itertools.chain(pronunciations))
+        self.collapsed_string = list(itertools.chain(*[collapse(p) for p in pronunciations]))
+        self.collapsed_string = [re.sub(r'[0-9]', '', x) for x in self.collapsed_string]
         
-        self.did_collapse = len(self.phone_string) == self.collapsed_string)
+        self.did_collapse = len(self.phone_string) == self.collapsed_string
         
     def __str__(self):
         return str([self.words, f'collapsed_diff={self.did_collapse}', self.pronunciations])
@@ -49,6 +55,7 @@ def force_align(collapsed, yhat):
 
     yhat = np.squeeze(yhat, 0)
     predictions = np.abs(np.log(yhat))
+    collapsed = [phn2num[x.lower()] for x in collapsed]
     a, M = align(collapsed, predictions)
     a = [num2phn[p] for p in a]
     seq = [PhoneLabel(phone=a[0], duration=1)]
@@ -61,7 +68,7 @@ def force_align(collapsed, yhat):
             seq[-1].duration += 1
     return seq, M
     
-def make_textgrid(seq, tgname, maxTime, words, interpolate=True, symm=True, probs=None):
+def make_textgrid(seq, tgname, maxTime, words, interpolate=True, probs=None):
     '''
     Side-effect of writing TextGrid to disk
     '''
@@ -90,7 +97,7 @@ def make_textgrid(seq, tgname, maxTime, words, interpolate=True, symm=True, prob
     
     if interpolate:
     
-        additional = interpolated_part(seq[0].duration-1, 0, probs, symm=symm)
+        additional = interpolated_part(seq[0].duration-1, 0, probs)
         if curr_dur + additional < maxTime:
             curr_dur += additional
         added_bits.append(additional)
@@ -112,7 +119,7 @@ def make_textgrid(seq, tgname, maxTime, words, interpolate=True, symm=True, prob
             endCur = cumu_frame_durs[i] - 1
         
             dur -= added_bits[-1]
-            additional = interpolated_part(endCur, i, probs, symm=symm)
+            additional = interpolated_part(endCur, i, probs)
             if beginning + dur + additional < maxTime:
                 dur += additional
             added_bits.append(additional)
@@ -129,6 +136,13 @@ def make_textgrid(seq, tgname, maxTime, words, interpolate=True, symm=True, prob
     
     if words.did_collapse:
         unsplit_phones(tier, words)
+        
+    labels_with_stress = list(itertools.chain(*words.pronunciations))
+    for i in range(len(tier.intervals)):
+        x = labels_with_stress[i]
+        y = tier.intervals[i]
+        if x != y.mark:
+            tier.intervals[i].mark = x
     
     word_tier = make_word_tier(tier, words)
     tg.tiers.append(word_tier)
@@ -156,26 +170,27 @@ def unsplit_phones(tier, words):
     for i in split_idxs[::-1]:
     
         midpoint = (tier[i].minTime + tier[i].maxTime) / 2
-        new_interval = textgrid.Interval(minTime=midpoint, maxTime=tier[i.maxTime], tier[i].mark)
+        new_interval = textgrid.Interval(minTime=midpoint, maxTime=tier[i.maxTime], mark=tier[i].mark)
         tier[i].maxTime = midpoint
         tier.insert(i+1, new_interval)
         
     
 def make_word_tier(segment_tier, words):
 
-    phone_string = itertools.chain(words.phone_string)
+    phone_string = list(itertools.chain(words.phone_string))
     
     words_int = textgrid.IntervalTier()
+    words_int.name = 'words'
     word_ends = np.cumsum([len(p) for p in words.pronunciations]) - 1
     maxTime = segment_tier[word_ends[0]].maxTime
-    interval = textgrid.Interval(minTime=0, maxTime=maxTime, words[0])
-    words_int.append(interval)
+    interval = textgrid.Interval(minTime=0, maxTime=maxTime, mark=words.words[0])
+    words_int.intervals.append(interval)
     
-    for w, idx in zip(words[1:], word_ends[1:]):
+    for w, w_end in zip(words.words[1:], word_ends[1:]):
         minTime = words_int[-1].maxTime
-        maxTime = segment_tier[word_ends[idx]].maxTime
-        interval = textgrid.Interval(minTime=minTime, maxTime=maxTime, w)
-        words_int.append(interval)
+        maxTime = segment_tier[w_end].maxTime
+        interval = textgrid.Interval(minTime=minTime, maxTime=maxTime, mark=w)
+        words_int.intervals.append(interval)
     
     return words_int
     
@@ -207,84 +222,120 @@ def interpolated_part(endCur, phone_n, probs):
 
 if __name__ == '__main__':
 
-    if len(sys.argv) < 4:
-        print('Required command line arguments missing. Command syntax:', file=sys.stderr)
-        print('\tpython maps.py AUDIO_NAME TRANSCRIPTION_NAME DICTIONARY_NAME (USE_INTERPOLATION)', file=sys.stderr)
-        print('Note that the parentheses indicate that the USE_INTERPOLATION variable is opitonal, not that it should have surrounding parentheses.')
-
-    mod_name = 'timbuck_eng.tf'
-    MODEL = load_model(mod_name, compile=False)
+    p = build_arg_parser()
+    args = p.parse_args()
+    args = vars(args)
     
-    wavname = Path(sys.argv[1])
+    wavnames = Path(args['audio'])
     
-    if not wavname.is_file():
-        print(f'Could not find {wavname}. Please check the spelling and try again.', file=sys.stderr)
-        sys.exit(1)
+    if not wavnames.is_file() and not wavnames.is_dir():
+        raise RuntimeError(f'Could not find {wavnames}. Please check the spelling and try again.')
+    elif wavnames.is_dir():
+        paths = []
+        for root, _, files in os.walk(str(wavnames)):
+            paths += [Path(root) / Path(x) for x in files if x.lower().endswith('wav')]
+        wavnames = paths
+    else: wavnames = [wavnames]
     
-    transcription = Path(sys.argv[2])
+    transcriptions = Path(args['text'])
     
-    if not transcription.is_file():
-        print(f'Could not find {transcription}. Please check the spelling and try again.', file=sys.stderr)
-        sys.exit(1)
+    if not transcriptions.is_file() and not transcriptions.is_dir():
+        raise RuntimeError(f'Could not find {transcription}. Please check the spelling and try again.')
+    elif transcriptions.is_dir():
+        paths = []
+        for root, _, files in os.walk(str(transcriptions)):
+            paths += [Path(root) / Path(x) for x in files if x.lower().endswith('txt')]
+        transcriptions = paths
+    else: transcriptions = [transcriptions]
     
-    d_path = Path(sys.argv[3])
+    w_set = set(x.stem for x in wavnames)
+    t_set = set(x.stem for x in transcriptions)
+    
+    mismatched = []
+    for w in wavnames:
+        if w.stem not in t_set:
+            mismatched.append(w)
+    
+    for t in transcriptions:
+        if t.stem not in w_set:
+            mismatched.append(t)
+    
+    if mismatched:
+        raise RuntimeError(f'The following files did not have a corresponding WAV or txt match. Please add matches or remove the files.\n{",",join(mismatched)}')
+    
+    d_path = Path(args['dict'])
     
     if not d_path.is_file():
-        print(f'Could not find {d_path}. Please check the spelling and try again.', file=sys.stderr)
-        sys.exit(1)
+        raise RuntimeError(f'Could not find {d_path}. Please check the spelling and try again.')
     
     word2phone = load_dictionary(d_path)
     
-    if sys.argv[4]:
-        if sys.argv[4].lower() == 'true':
-            use_interp = True
-        elif sys.argv[4].lower() == 'false':
-            use_interp = False
-        else:
-            print(f'Unsupported value for USE_INTERPOLATION: {sys.argv[4]}. Please use "True", "False", or leave blank to use default of "True".', file=sys.stderr)
-            sys.ext(1)
-            
-    else: use_interp=True
+    # Parentheses to help visually distinguish the "=" and "==" in the same line
+    use_interp = (args['interp'] == 'true')        
+    add_sil = (args['sil'] == 'true')
     
-    tgname = wavname.with_suffix('.TextGrid')s
-
-    sr, samples = wavfile.read(wavname)
-    duration = samples.size / sr # convert samples to seconds
-        
-    mfcc = psf.mfcc(samples, sr, winstep=FRAME_INTERVAL)
-    delta = psf.delta(mfcc, 2)
-    deltadelta = psf.delta(delta, 2)
-        
-    x = np.hstack((mfcc, delta, deltadelta))
-    x = np.expand_dims(x, axis=0)
-    yhat = MODEL.predict(x, verbose=0)
+    tgnames = [x.with_suffix('.TextGrid') for x in wavnames]
     
-    with open(transcription, 'r') as f:
-        word_labels = f.read().split()
-        
-    word_chain = []
-    ood_words = []
-    for w in word_labels:
-        try: word_chain.append(word2phone[w])
-        except KeyError:
-            ood_words.append(w)
-            
+    word_list = []
+    for t in transcriptions:
+        with open(t, 'r') as f:
+            w = f.read().upper().split()
+            word_list += w
+    
+    ood_words = [w for w in word_list if w not in word2phone]
+    
     if ood_words:
-        print('The following words were not found in the dictionary. Please add them to the dictionary and run the aligner again.', file=sys.stderr)
-        print(', '.join(ood_words), file=sys.stderr)
-        sys.exit(1)
-        
-    best_score = np.inf
+        raise RuntimeError(f'The following words were not found in the dictionary. Please add them to the dictionary and run the aligner again.\n{",".join(ood_words)}')
     
-    # Iterate through pronunciation variants to choose best alignment
-    for c in itertools.product(word_chain*):
-        w_string = WordString(word_chain, c)
-        
-        seq, M = force_align(w_string.collapsed_string, yhat)
-        if M[-1, -1] < best_score:
-            best_seq = seq
-            best_M = M
-            best_score = M[-1, -1]        
+    for tgname, wavname, transcription in zip(tgnames, wavnames, transcriptions):
 
-    make_textgrid(seq, tgname, duration, w_string, interpolate=use_interp, probs=M.T)
+        sr, samples = wavfile.read(wavname)
+        duration = samples.size / sr # convert samples to seconds
+            
+        mfcc = psf.mfcc(samples, sr, winstep=FRAME_INTERVAL)
+        delta = psf.delta(mfcc, 2)
+        deltadelta = psf.delta(delta, 2)
+            
+        x = np.hstack((mfcc, delta, deltadelta))
+        x = np.expand_dims(x, axis=0)
         
+        mod_name = 'timbuck_eng.tf'
+        MODEL = load_model(mod_name, compile=False)
+        
+        yhat = MODEL.predict(x, verbose=0)
+        
+        with open(transcription, 'r') as f:
+            word_labels = f.read().upper().split()
+            
+        if add_sil:
+            word_labels = ['sil'] + word_labels + ['sil']
+        word_chain = [word2phone[w] for w in word_labels]
+            
+        best_score = np.inf
+        
+        # Iterate through pronunciation variants to choose best alignment
+        # TODO: This iteration only checks segmental differences; stress differences won't get evaluated
+        #   and may end up semi-randomly chosen (or choose only first option)
+        #
+        # This method will very quickly hit combinatoric explosion since function words like 'the' have
+        # several variants
+        for c in itertools.product(*word_chain):
+        
+            # Remove empty 'sil' options
+            if add_sil:
+                this_word_labels = [x for cI, x in zip(c, word_labels) if cI]
+                c = [x for x in c if x]
+            else:
+                this_word_labels = word_labels
+        
+            w_string = WordString(this_word_labels, c)
+            
+            seq, M = force_align(w_string.collapsed_string, yhat)
+            if M[-1, -1] < best_score:
+                best_seq = seq
+                best_M = M
+                best_score = M[-1, -1]
+                best_w_string = w_string
+
+        make_textgrid(best_seq, tgname, duration, best_w_string, interpolate=use_interp, probs=best_M.T)
+            
