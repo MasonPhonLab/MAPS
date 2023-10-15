@@ -49,11 +49,13 @@ def warp(S, T, d):
     
     M[0, 0] = 0
     
+    # Some optimization is being left on the table; this should be computable
+    # for a whole column at a time
     for r in range(1, nrow+1):
         for c in range(1, ncol+1):
-            # need -1 offset because of extra first row
-            # and first column in M that isn't present in
-            # the `probs` matrix
+            # need -1 offset for cost because of extra first row
+            # and first column in M that isn't present in the
+            # `probs` matrix
             cost = d(r-1, c-1)
             M[r, c] = cost + min(M[r, c-1], M[r-1, c-1])
             

@@ -4,17 +4,12 @@ from textgrid import textgrid
 from tensorflow.keras.models import load_model
 from scipy.io import wavfile
 import numpy as np
-import os
-from julia import Main
+import re, sys, itertools
 from tqdm import tqdm
-import statistics
 import tensorflow as tf
 import python_speech_features as psf
 from utils import align, collapse, load_dictionary
-import itertools
 from pathlib import Path
-import re
-import sys
 from args import build_arg_parser
 
 FRAME_LENGTH = 0.025 # 25 ms expressed as seconds
@@ -24,6 +19,7 @@ phones = 'h#	q	eh	dx	iy	r	ey	ix	tcl	sh	ow	z	s	hh	aw	m	t	er	l	w	aa	hv	ae	dcl	y	ax
 
 num2phn = {i: p for i, p in enumerate(phones)}
 phn2num = {p: i for i, p in enumerate(phones)}
+phn2num['sil'] = phn2num['h#']
 
 class PhoneLabel:
 
@@ -42,11 +38,10 @@ class WordString:
         self.words = words
         self.pronunciations = pronunciations
         
-        self.phone_string = list(itertools.chain(pronunciations))
-        self.collapsed_string = list(itertools.chain(*[collapse(p) for p in pronunciations]))
-        self.collapsed_string = [re.sub(r'[0-9]', '', x) for x in self.collapsed_string]
+        self.phone_string = list(itertools.chain(*pronunciations))
+        self.collapsed_string = collapse([re.sub(r'[0-9]', '', x) for x in self.phone_string])
         
-        self.did_collapse = len(self.phone_string) == self.collapsed_string
+        self.did_collapse = len(self.phone_string) != len(self.collapsed_string)
         
     def __str__(self):
         return str([self.words, f'collapsed_diff={self.did_collapse}', self.pronunciations])
@@ -137,9 +132,9 @@ def make_textgrid(seq, tgname, maxTime, words, interpolate=True, probs=None):
     if words.did_collapse:
         unsplit_phones(tier, words)
         
-    labels_with_stress = list(itertools.chain(*words.pronunciations))
+    
     for i in range(len(tier.intervals)):
-        x = labels_with_stress[i]
+        x = words.phone_string[i]
         y = tier.intervals[i]
         if x != y.mark:
             tier.intervals[i].mark = x
@@ -151,28 +146,27 @@ def make_textgrid(seq, tgname, maxTime, words, interpolate=True, probs=None):
     tg.write(tgname)
     
 def unsplit_phones(tier, words):
-
-    unc_i = 0
     
     split_idxs = []
     
+    phone_stringI = 0
+    
     for col_i, p in enumerate(words.collapsed_string):
     
-        unc_p = words.phone_string[col_i]
+        unc_p = re.sub(r'[0-9]', '', words.phone_string[phone_stringI])
         if p != unc_p:
             split_idxs.append(col_i-1)
-            unc_i += 1
-        
-        unc_i += 1
+            phone_stringI += 1
+        phone_stringI += 1
     
     # work in reverse order so that in-place modification of list and concomitant
     # changes in later index numbers don't affect earlier ones
     for i in split_idxs[::-1]:
     
         midpoint = (tier[i].minTime + tier[i].maxTime) / 2
-        new_interval = textgrid.Interval(minTime=midpoint, maxTime=tier[i.maxTime], mark=tier[i].mark)
+        new_interval = textgrid.Interval(minTime=midpoint, maxTime=tier[i].maxTime, mark=tier[i].mark)
         tier[i].maxTime = midpoint
-        tier.insert(i+1, new_interval)
+        tier.intervals.insert(i+1, new_interval)
         
     
 def make_word_tier(segment_tier, words):
@@ -226,27 +220,21 @@ if __name__ == '__main__':
     args = p.parse_args()
     args = vars(args)
     
-    wavnames = Path(args['audio'])
+    wavname_path = Path(args['audio'])
     
-    if not wavnames.is_file() and not wavnames.is_dir():
-        raise RuntimeError(f'Could not find {wavnames}. Please check the spelling and try again.')
-    elif wavnames.is_dir():
-        paths = []
-        for root, _, files in os.walk(str(wavnames)):
-            paths += [Path(root) / Path(x) for x in files if x.lower().endswith('wav')]
-        wavnames = paths
-    else: wavnames = [wavnames]
+    if not wavname_path.is_file() and not wavname_path.is_dir():
+        raise RuntimeError(f'Could not find {wavname_path}. Please check the spelling and try again.')
+    elif wavname_path.is_dir():
+        wavnames = [wavname_path / Path(x) for x in os.listdir(wavname_path) if x.lower().endswith('.wav')]
+    else: wavnames = [wavname_path]
     
-    transcriptions = Path(args['text'])
+    transcription_path = Path(args['text'])
     
-    if not transcriptions.is_file() and not transcriptions.is_dir():
-        raise RuntimeError(f'Could not find {transcription}. Please check the spelling and try again.')
-    elif transcriptions.is_dir():
-        paths = []
-        for root, _, files in os.walk(str(transcriptions)):
-            paths += [Path(root) / Path(x) for x in files if x.lower().endswith('txt')]
-        transcriptions = paths
-    else: transcriptions = [transcriptions]
+    if not transcription_path.is_file() and not transcription_path.is_dir():
+        raise RuntimeError(f'Could not find {transcription_path}. Please check the spelling and try again.')
+    elif transcription_path.is_dir():
+        transcriptions = [transcription_path / Path(x) for x in os.listdir(transcription_path) if x.lower().endswith('.txt')]
+    else: transcriptions = [transcription_path]
     
     w_set = set(x.stem for x in wavnames)
     t_set = set(x.stem for x in transcriptions)
@@ -261,7 +249,7 @@ if __name__ == '__main__':
             mismatched.append(t)
     
     if mismatched:
-        raise RuntimeError(f'The following files did not have a corresponding WAV or txt match. Please add matches or remove the files.\n{",",join(mismatched)}')
+        raise RuntimeError(f'The following files did not have a corresponding WAV or txt match. Please add matches or remove the files. Note that name matching is case-sensitive.\n{",",join(mismatched)}')
     
     d_path = Path(args['dict'])
     
@@ -282,12 +270,27 @@ if __name__ == '__main__':
             w = f.read().upper().split()
             word_list += w
     
-    ood_words = [w for w in word_list if w not in word2phone]
+    ood_words = set([w for w in word_list if w not in word2phone])
     
     if ood_words:
-        raise RuntimeError(f'The following words were not found in the dictionary. Please add them to the dictionary and run the aligner again.\n{",".join(ood_words)}')
+        raise RuntimeError(f'The following words were not found in the dictionary. Please add them to the dictionary and run the aligner again.\n{", ".join(ood_words)}')
     
-    for tgname, wavname, transcription in zip(tgnames, wavnames, transcriptions):
+    quiet = args['quiet']
+    
+    filenames = list(zip(tgnames, wavnames, transcriptions))
+    
+    if not quiet:
+        print('Aligning...')
+        filenames = tqdm(filenames)
+        
+    mod_name = 'timbuck_eng.tf'
+    MODEL = load_model(mod_name, compile=False)
+    
+    overwrite = args['overwrite']
+    
+    for tgname, wavname, transcription in filenames:
+        
+        if tgname.is_file() and not overwrite: continue
 
         sr, samples = wavfile.read(wavname)
         duration = samples.size / sr # convert samples to seconds
@@ -298,9 +301,6 @@ if __name__ == '__main__':
             
         x = np.hstack((mfcc, delta, deltadelta))
         x = np.expand_dims(x, axis=0)
-        
-        mod_name = 'timbuck_eng.tf'
-        MODEL = load_model(mod_name, compile=False)
         
         yhat = MODEL.predict(x, verbose=0)
         
@@ -313,11 +313,13 @@ if __name__ == '__main__':
             
         best_score = np.inf
         
+        check_variants = args['check_variants']
+        
         # Iterate through pronunciation variants to choose best alignment
         # TODO: This iteration only checks segmental differences; stress differences won't get evaluated
         #   and may end up semi-randomly chosen (or choose only first option)
         #
-        # This method will very quickly hit combinatoric explosion since function words like 'the' have
+        # This method will very quickly cause combinatoric explosion since function words have
         # several variants
         for c in itertools.product(*word_chain):
         
@@ -329,13 +331,15 @@ if __name__ == '__main__':
                 this_word_labels = word_labels
         
             w_string = WordString(this_word_labels, c)
-            
+        
             seq, M = force_align(w_string.collapsed_string, yhat)
             if M[-1, -1] < best_score:
                 best_seq = seq
                 best_M = M
                 best_score = M[-1, -1]
                 best_w_string = w_string
+                
+            if not check_variants: break
 
         make_textgrid(best_seq, tgname, duration, best_w_string, interpolate=use_interp, probs=best_M.T)
             
