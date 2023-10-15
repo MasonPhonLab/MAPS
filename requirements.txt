@@ -1,0 +1,6 @@
+tensorflow>=2.12.0
+scipy
+numpy
+tqdm
+textgrid
+python_speech_features
