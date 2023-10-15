@@ -30,7 +30,8 @@ options:
   --sil {true,false}    Whether to add silences to beginning and end of transcription. Default is
                         set to true
   --quiet               Suppresses info messages when flag is present; does not accept a value
-  --check_variants      Checks pronunciation variants in the dictionary.
+  --check_variants      Checks pronunciation variants in the dictionary. This is currently VERY
+                        slow
   --overwrite           If flag is set, existing TextGrid files with the same stem as the WAV
                         files will be overwritten
 ```

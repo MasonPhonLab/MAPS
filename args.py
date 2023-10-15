@@ -14,7 +14,7 @@ def build_arg_parser():
     p.add_argument('--interp', default='true', choices=['true', 'false'], help='Whether to use interpolation or not. Default is set to true.')
     p.add_argument('--sil', default='true', choices=['true', 'false'], help='Whether to add silences to beginning and end of transcription. Default is set to true')
     p.add_argument('--quiet', action='store_true', help='Suppresses info messages when flag is present; does not accept a value')
-    p.add_argument('--check_variants', action='store_true', help='Checks pronunciation variants in the dictionary.')
+    p.add_argument('--check_variants', action='store_true', help='Checks pronunciation variants in the dictionary. This is currently VERY slow')
     p.add_argument('--overwrite', action='store_true', help='If flag is set, existing TextGrid files with the same stem as the WAV files will be overwritten')
 
     return p
