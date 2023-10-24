@@ -2,6 +2,8 @@
 
 Mason-Alberta Phonetic Segmenter
 
+[![DOI](https://zenodo.org/badge/703623203.svg)](https://zenodo.org/doi/10.5281/zenodo.10035627)
+
 This tool is still in a pre-release stage and has not been tested against a variety of data types. We welcome you to use it for your own work and report any issues you encounter. It is currently a command-line-only utility.
 
 Currently, only a model for American English is provided. Future releases will include a training function to allow the model to be trained on new data. If you are working with data that is reasonably close to the phone set in American English, the aligner might still be useful for your needs.
