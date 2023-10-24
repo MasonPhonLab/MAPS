@@ -1,9 +1,9 @@
 ---
 title: Model card for MAPS acoustic model
 author:
-	- Matthew C. Kelley
-	- Scott James Perry
-	- Benjmain V. Tucker
+    - Matthew C. Kelley
+    - Scott James Perry
+    - Benjmain V. Tucker
 date: October 2023
 ---
 
