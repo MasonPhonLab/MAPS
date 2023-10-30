@@ -249,7 +249,7 @@ if __name__ == '__main__':
             mismatched.append(t)
     
     if mismatched:
-        raise RuntimeError(f'The following files did not have a corresponding WAV or txt match. Please add matches or remove the files. Note that name matching is case-sensitive.\n{",",join(mismatched)}')
+        raise RuntimeError(f'The following files did not have a corresponding WAV or txt match. Please add matches or remove the files. Note that name matching is case-sensitive.\n{",".join(str(x) for x in mismatched)}')
     
     d_path = Path(args['dict'])
     
