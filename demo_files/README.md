@@ -2,12 +2,13 @@
 
 Until the documentation pages are written, this contents of this folder will demonstrate how the system is run.
 
-## Files contained
+## Relevant files contained
 
 * **dark_suit_sentence_16khz.wav** The audio file to be segmented, recorded by @maetshju
 * **dark_suit_sentence_16khz.wav** The orthogrpahic transcription of the audio file
 * **dark_suit_sentence_16khz.TextGrid** The TextGrid that is created to view in Praat after running the aligner
 * **sample_dictionary.txt** A sample dictionary using the CMU Pronouncing Dictionary format
+* **alignment_sampe.png** Image of alignment with spectrogram and waveform, created from Praat
 
 
 ## Running the demo
