@@ -11,6 +11,10 @@ import python_speech_features as psf
 from utils import align, collapse, load_dictionary
 from pathlib import Path
 from args import build_arg_parser
+import statistics
+import math
+
+EPS = 1e-8
 
 FRAME_LENGTH = 0.025 # 25 ms expressed as seconds
 FRAME_INTERVAL = 0.01 # 10 ms expressed as seconds
@@ -228,6 +232,16 @@ if __name__ == '__main__':
         wavnames = [wavname_path / Path(x) for x in os.listdir(wavname_path) if x.lower().endswith('.wav')]
     else: wavnames = [wavname_path]
     
+    model_path = Path(args['model'])
+    if not model_path.suffix == '.tf':
+        model_names = [x for x in model_path.iterdir() if x.suffix == '.tf']
+        if not model_names:
+            raise RuntimeError(f'Could not find a model named {model_path}, nor any models within that path. Please check spelling and file extensions and try again.')
+    else:
+        model_names = [model_path]
+    
+    use_ensemble = len(model_names) > 1
+    
     transcription_path = Path(args['text'])
     
     if not transcription_path.is_file() and not transcription_path.is_dir():
@@ -284,14 +298,13 @@ if __name__ == '__main__':
         filenames = tqdm(filenames)
         
     mod_name = 'timbuck_eng.tf'
-    MODEL = load_model(mod_name, compile=False)
+    MODELS = [load_model(x, compile=False) for x in model_names]
     
     overwrite = args['overwrite']
     
-    for tgname, wavname, transcription in filenames:
+    for tgname_base, wavname, transcription in filenames:
+        tg_names = list()
         
-        if tgname.is_file() and not overwrite: continue
-
         sr, samples = wavfile.read(wavname)
         duration = samples.size / sr # convert samples to seconds
             
@@ -302,44 +315,102 @@ if __name__ == '__main__':
         x = np.hstack((mfcc, delta, deltadelta))
         x = np.expand_dims(x, axis=0)
         
-        yhat = MODEL.predict(x, verbose=0)
+        for m, m_name in zip(MODELS, model_names):
         
-        with open(transcription, 'r') as f:
-            word_labels = f.read().upper().split()
+            print(f'using model {m_name}')
+        
+            if use_ensemble:
+                tgname = tgname_base.parent / tgname_base.parts[-1].replace('.TextGrid', f'_{m_name.stem}.TextGrid')
+                tg_names.append(tgname)
             
-        if add_sil:
-            word_labels = ['sil'] + word_labels + ['sil']
-        word_chain = [word2phone[w] for w in word_labels]
             
-        best_score = np.inf
-        
-        check_variants = args['check_variants']
-        
-        # Iterate through pronunciation variants to choose best alignment
-        # TODO: This iteration only checks segmental differences; stress differences won't get evaluated
-        #   and may end up semi-randomly chosen (or choose only first option)
-        #
-        # This method will very quickly cause combinatoric explosion since function words have
-        # several variants
-        for c in itertools.product(*word_chain):
-        
-            # Remove empty 'sil' options
-            if add_sil:
-                this_word_labels = [x for cI, x in zip(c, word_labels) if cI]
-                c = [x for x in c if x]
-            else:
-                this_word_labels = word_labels
-        
-            w_string = WordString(this_word_labels, c)
-        
-            seq, M = force_align(w_string.collapsed_string, yhat)
-            if M[-1, -1] < best_score:
-                best_seq = seq
-                best_M = M
-                best_score = M[-1, -1]
-                best_w_string = w_string
+            if tgname.is_file() and not overwrite: continue
+            
+            yhat = m.predict(x, verbose=0)
+            
+            with open(transcription, 'r') as f:
+                word_labels = f.read().upper().split()
                 
-            if not check_variants: break
-
-        make_textgrid(best_seq, tgname, duration, best_w_string, interpolate=use_interp, probs=best_M.T)
+            if add_sil:
+                word_labels = ['sil'] + word_labels + ['sil']
+            word_chain = [word2phone[w] for w in word_labels]
+                
+            best_score = np.inf
             
+            check_variants = args['check_variants']
+            
+            # Iterate through pronunciation variants to choose best alignment
+            # TODO: This iteration only checks segmental differences; stress differences won't get evaluated
+            #   and may end up semi-randomly chosen (or choose only first option)
+            #
+            # This method will very quickly cause combinatoric explosion since function words have
+            # several variants
+            for c in itertools.product(*word_chain):
+            
+                # Remove empty 'sil' options
+                if add_sil:
+                    this_word_labels = [x for cI, x in zip(c, word_labels) if cI]
+                    c = [x for x in c if x]
+                else:
+                    this_word_labels = word_labels
+            
+                w_string = WordString(this_word_labels, c)
+            
+                seq, M = force_align(w_string.collapsed_string, yhat)
+                if M[-1, -1] < best_score:
+                    best_seq = seq
+                    best_M = M
+                    best_score = M[-1, -1]
+                    best_w_string = w_string
+                    
+                if not check_variants: break
+
+            make_textgrid(best_seq, tgname, duration, best_w_string, interpolate=use_interp, probs=best_M.T)
+        
+        if use_ensemble:
+            print(tg_names)
+            ensemble_tg_path = Path(tgname_base.parent, tgname_base.stem + '_ensemble.TextGrid')
+            ens_intervals = textgrid.IntervalTier(name='segments')
+            intervals = []
+            cis = []
+            tgs = [textgrid.TextGrid() for _ in tg_names]
+            for tg, tg_name in zip(tgs, tg_names):
+                tg.read(tg_name)
+                
+            n_tgs = len(tgs)
+            n_intervals = len(tgs[0].tiers[1].intervals)
+            
+            for i in range(n_intervals):
+                lab = tgs[0].tiers[1].intervals[i].mark
+                mintimes = [tgs[tier_I].tiers[1].intervals[i].minTime for tier_I in range(n_tgs)]
+                maxtimes = [tgs[tier_I].tiers[1].intervals[i].maxTime for tier_I in range(n_tgs)]
+                
+                mintime = statistics.mean(mintimes)
+                maxtime = statistics.mean(maxtimes)
+                
+                se = statistics.stdev(maxtimes) / math.sqrt(n_tgs)
+                ci_lo = maxtime - 1.96 * se
+                ci_hi = maxtime + 1.96 * se
+                if ci_lo == ci_hi:
+                    ci_lo -= EPS
+                    ci_hi += EPS
+                
+                interval = textgrid.Interval(minTime=mintime, maxTime=maxtime, mark=lab)
+                intervals.append(interval)
+                
+                if i < n_intervals - 1:
+                    ci_lo_p = textgrid.Point(mark=f'{lab}_cilo', time=ci_lo)
+                    ci_hi_p = textgrid.Point(mark=f'{lab}_cihi', time=ci_hi)
+                    cis += [ci_lo_p, ci_hi_p]
+                
+            ens_tg = textgrid.TextGrid(maxTime=tgs[0].maxTime)
+            
+            int_tier = textgrid.IntervalTier(name='segments')
+            int_tier.intervals = intervals
+            ens_tg.tiers.append(int_tier)
+            
+            ci_tier = textgrid.PointTier(name='cis')
+            ci_tier.points = cis
+            ens_tg.tiers.append(ci_tier)
+            
+            ens_tg.write(ensemble_tg_path)
