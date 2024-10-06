@@ -241,6 +241,7 @@ if __name__ == '__main__':
         model_names = [model_path]
     
     use_ensemble = len(model_names) > 1
+    rm_ensemble = args['rm_ensemble']
     
     transcription_path = Path(args['text'])
     
@@ -294,35 +295,32 @@ if __name__ == '__main__':
     filenames = list(zip(tgnames, wavnames, transcriptions))
     
     if not quiet:
-        print('Aligning...')
-        filenames = tqdm(filenames)
-        
-    mod_name = 'timbuck_eng.tf'
-    MODELS = [load_model(x, compile=False) for x in model_names]
+        print('BEGINNING ALIGNMENT')
     
     overwrite = args['overwrite']
     
-    for tgname_base, wavname, transcription in filenames:
-        tg_names = list()
+    for m_I, m_name in enumerate(model_names, start=1):
+         
+        m = load_model(m_name, compile=False)
         
-        sr, samples = wavfile.read(wavname)
-        duration = samples.size / sr # convert samples to seconds
+        print(f'USING MODEL {m_name.name} ({m_I}/{len(model_names)})', flush=True)
+        
+        if not quiet: filenames = tqdm(filenames)
+    
+        for tgname_base, wavname, transcription in filenames:
             
-        mfcc = psf.mfcc(samples, sr, winstep=FRAME_INTERVAL)
-        delta = psf.delta(mfcc, 2)
-        deltadelta = psf.delta(delta, 2)
-            
-        x = np.hstack((mfcc, delta, deltadelta))
-        x = np.expand_dims(x, axis=0)
-        
-        for m, m_name in zip(MODELS, model_names):
-        
-            print(f'using model {m_name}')
+            sr, samples = wavfile.read(wavname)
+            duration = samples.size / sr # convert samples to seconds
+                
+            mfcc = psf.mfcc(samples, sr, winstep=FRAME_INTERVAL)
+            delta = psf.delta(mfcc, 2)
+            deltadelta = psf.delta(delta, 2)
+                
+            x = np.hstack((mfcc, delta, deltadelta))
+            x = np.expand_dims(x, axis=0)
         
             if use_ensemble:
                 tgname = tgname_base.parent / tgname_base.parts[-1].replace('.TextGrid', f'_{m_name.stem}.TextGrid')
-                tg_names.append(tgname)
-            
             
             if tgname.is_file() and not overwrite: continue
             
@@ -367,12 +365,21 @@ if __name__ == '__main__':
 
             make_textgrid(best_seq, tgname, duration, best_w_string, interpolate=use_interp, probs=best_M.T)
         
-        if use_ensemble:
-            print(tg_names)
+    if use_ensemble:
+        print('ENSEMBLING', flush=True)
+        for tgname_base, _, _ in filenames:
+            
             ensemble_tg_path = Path(tgname_base.parent, tgname_base.stem + '_ensemble.TextGrid')
             ens_intervals = textgrid.IntervalTier(name='segments')
-            intervals = []
-            cis = []
+            intervals = list()
+            cis = list()
+            
+            tg_names = list()
+            
+            for m_name in model_names:
+                tail = tgname_base.parts[-1].replace('.TextGrid', f'_{m_name.stem}.TextGrid')
+                t = tgname_base.parent / tail
+                tg_names.append(t)
             tgs = [textgrid.TextGrid() for _ in tg_names]
             for tg, tg_name in zip(tgs, tg_names):
                 tg.read(tg_name)
@@ -414,3 +421,8 @@ if __name__ == '__main__':
             ens_tg.tiers.append(ci_tier)
             
             ens_tg.write(ensemble_tg_path)
+            
+            # Remove ensemble files if not flagged to remove
+            if rm_ensemble:
+                print(tg_names)
+                for n in tg_names: n.unlink(missing_ok=True)
