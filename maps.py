@@ -367,9 +367,12 @@ if __name__ == '__main__':
         
     if use_ensemble:
         print('ENSEMBLING', flush=True)
-        for tgname_base, _, _ in filenames:
+        
+        all_tg_names = list()
+        for tgname_base, _, _ in tqdm(filenames):
             
             ensemble_tg_path = Path(tgname_base.parent, tgname_base.stem + '_ensemble.TextGrid')
+            
             ens_intervals = textgrid.IntervalTier(name='segments')
             intervals = list()
             cis = list()
@@ -380,9 +383,13 @@ if __name__ == '__main__':
                 tail = tgname_base.parts[-1].replace('.TextGrid', f'_{m_name.stem}.TextGrid')
                 t = tgname_base.parent / tail
                 tg_names.append(t)
+                
+            all_tg_names += tg_names
+            if ensemble_tg_path.is_file() and not overwrite: continue
+                
             tgs = [textgrid.TextGrid() for _ in tg_names]
             for tg, tg_name in zip(tgs, tg_names):
-                tg.read(tg_name)
+                tg.read(tg_name, round_digits=1000)
                 
             n_tgs = len(tgs)
             n_intervals = len(tgs[0].tiers[1].intervals)
@@ -422,7 +429,8 @@ if __name__ == '__main__':
             
             ens_tg.write(ensemble_tg_path)
             
+            all_tg_names += tg_names
+            
             # Remove ensemble files if not flagged to remove
-            if rm_ensemble:
-                print(tg_names)
-                for n in tg_names: n.unlink(missing_ok=True)
+        if rm_ensemble:
+            for n in all_tg_names: n.unlink(missing_ok=True)
