@@ -18,5 +18,6 @@ def build_arg_parser():
     p.add_argument('--quiet', action='store_true', help='Suppresses info messages when flag is present; does not accept a value')
     p.add_argument('--check-variants', action='store_true', help='Checks pronunciation variants in the dictionary. This is currently VERY slow')
     p.add_argument('--overwrite', action='store_true', help='If flag is set, existing TextGrid files with the same stem as the WAV files will be overwritten')
+    p.add_argument('--ensemble-table', action='store_true', help='Flags program to write ensemble results to a table. Appends to a filename based on path to the audio and the path to the model. You may need to delete rows from previous runs if they are not needed.')
 
     return p

@@ -242,6 +242,7 @@ if __name__ == '__main__':
     
     use_ensemble = len(model_names) > 1
     rm_ensemble = args['rm_ensemble']
+    ensemble_table = args['ensemble_table']
     
     transcription_path = Path(args['text'])
     
@@ -368,6 +369,12 @@ if __name__ == '__main__':
     if use_ensemble:
         print('ENSEMBLING', flush=True)
         
+        if ensemble_table:
+            f_path = f'{wavname_path.name}_{model_path.name}_alignment_results.tsv'
+            col_names = ['file', 'word', 'word_mintime', 'word_maxtime', 'segment', 'segment_mintime', 'segment_maxtime', 'segment_se', 'segment_lo_ci', 'segment_hi_ci']
+            with open(f_path, 'a') as w:
+                w.write('\t'.join(col_names) + '\n')
+        
         all_tg_names = list()
         for tgname_base, _, _ in tqdm(filenames):
             
@@ -450,6 +457,31 @@ if __name__ == '__main__':
             ens_tg.write(ensemble_tg_path)
             
             all_tg_names += tg_names
+            
+            if ensemble_table:
+                with open(f_path, 'a') as w:
+                    
+                    fname = ensemble_tg_path.name
+                    
+                    word_iter = iter(word_intervals)
+                    word = next(word_iter)
+                    
+                    for x_I, x in enumerate(intervals):
+                        if x_I == len(intervals) - 1:
+                            segment_lo_ci = x.minTime
+                            segment_hi_ci = x.maxTime
+                            segment_se = 0
+                        else:
+                            segment_lo_ci = cis[x_I * 2].time
+                            segment_hi_ci = cis[x_I * 2 + 1].time
+                            segment_se = (segment_hi_ci - segment_lo_ci) / (2 * 1.96)
+                        
+                        s = [fname, word.mark, word.minTime, word.maxTime, x.mark, x.minTime, x.maxTime, segment_se, segment_lo_ci, segment_hi_ci]
+                        s = '\t'.join([str(z) for z in s])
+                        
+                        w.write(s + '\n')
+                        
+                        if x.maxTime == word.maxTime and x_I < len(intervals) - 1: word = next(word_iter)
             
         # Remove ensemble files if flagged to remove
         if rm_ensemble:
