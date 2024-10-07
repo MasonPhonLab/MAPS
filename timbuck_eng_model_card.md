@@ -20,7 +20,7 @@ date: October 2023
 * **Model type:** Acoustic model / phone recognizer
 * **License:** MIT
 * **Parent model:** None
-* **Resources for more information:** [MAPS GitHub repo](https://github.com/MasonPhonLab/MAPS)
+* **Resources for more information:** [MAPS GitHub repo](https://github.com/MasonPhonLab/MAPS), [arXiv pre-print](https://arxiv.org/abs/2310.15425), [MAPS_Paper_Code GitHub repo](https://github.com/MasonPhonLab/MAPS_Paper_Code/)
 
 ## Model sources
 
