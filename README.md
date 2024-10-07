@@ -58,3 +58,9 @@ options:
 # Required packages
 
 The required package are listed in the `requirements.txt` file. They can be installed using `pip install -r requirements.txt`.
+
+# Citation
+
+If you use this package in your work, please cite the associated paper:
+
+Kelley, M., Perry, S. & Tucker, B. (2024). The Mason-Alberta Phonetic Segmenter: a forced alignment system based on deep neural networks and interpolation. *Phonetica, 81*(5), 451-508. [https://doi.org/10.1515/phon-2024-0015](https://doi.org/10.1515/phon-2024-0015)
