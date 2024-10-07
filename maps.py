@@ -417,13 +417,33 @@ if __name__ == '__main__':
                     ci_hi_p = textgrid.Point(mark=f'{lab}_cihi', time=ci_hi)
                     cis += [ci_lo_p, ci_hi_p]
                 
+            n_word_intervals = len(tgs[0].tiers[0].intervals)
+            word_intervals = list()
+            
+            for i in range(n_word_intervals):
+                lab = tgs[0].tiers[0].intervals[i].mark
+                mintimes = [tgs[tier_I].tiers[0].intervals[i].minTime for tier_I in range(n_tgs)]
+                maxtimes = [tgs[tier_I].tiers[0].intervals[i].maxTime for tier_I in range(n_tgs)]
+                
+                mintime = statistics.mean(mintimes)
+                maxtime = statistics.mean(maxtimes)
+                
+                word_interval = textgrid.Interval(minTime=mintime, maxTime=maxtime, mark=lab)
+                word_intervals.append(word_interval)
+            
+            # make word tier here
+            
             ens_tg = textgrid.TextGrid(maxTime=tgs[0].maxTime)
+            
+            word_tier = textgrid.IntervalTier(name='words')
+            word_tier.intervals = word_intervals
+            ens_tg.tiers.append(word_tier)
             
             int_tier = textgrid.IntervalTier(name='segments')
             int_tier.intervals = intervals
             ens_tg.tiers.append(int_tier)
             
-            ci_tier = textgrid.PointTier(name='cis')
+            ci_tier = textgrid.PointTier(name='95-CIs')
             ci_tier.points = cis
             ens_tg.tiers.append(ci_tier)
             
@@ -431,6 +451,6 @@ if __name__ == '__main__':
             
             all_tg_names += tg_names
             
-            # Remove ensemble files if not flagged to remove
+        # Remove ensemble files if flagged to remove
         if rm_ensemble:
             for n in all_tg_names: n.unlink(missing_ok=True)
