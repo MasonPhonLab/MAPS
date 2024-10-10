@@ -322,6 +322,8 @@ if __name__ == '__main__':
         
             if use_ensemble:
                 tgname = tgname_base.parent / tgname_base.parts[-1].replace('.TextGrid', f'_{m_name.stem}.TextGrid')
+            else:
+                tgname = tgname_base
             
             if tgname.is_file() and not overwrite: continue
             
