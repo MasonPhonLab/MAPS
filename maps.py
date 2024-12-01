@@ -13,6 +13,7 @@ from pathlib import Path
 from args import build_arg_parser
 import statistics
 import math
+import warnings
 
 EPS = 1e-8
 
@@ -127,7 +128,7 @@ def make_textgrid(seq, tgname, maxTime, words, interpolate=True, probs=None):
         
         interval = textgrid.Interval(beginning, ending, label)
         tier.intervals.append(interval)
-        
+
         curr_dur = ending
     
     last_interval = textgrid.Interval(curr_dur, maxTime, seq[-1].phone)
@@ -230,6 +231,7 @@ if __name__ == '__main__':
         raise RuntimeError(f'Could not find {wavname_path}. Please check the spelling and try again.')
     elif wavname_path.is_dir():
         wavnames = [wavname_path / Path(x) for x in os.listdir(wavname_path) if x.lower().endswith('.wav')]
+        wavnames.sort()
     else: wavnames = [wavname_path]
     
     model_path = Path(args['model'])
@@ -249,7 +251,7 @@ if __name__ == '__main__':
     if not transcription_path.is_file() and not transcription_path.is_dir():
         raise RuntimeError(f'Could not find {transcription_path}. Please check the spelling and try again.')
     elif transcription_path.is_dir():
-        transcriptions = [transcription_path / Path(x) for x in os.listdir(transcription_path) if x.lower().endswith('.txt')]
+        transcriptions = [transcription_path / Path(x.name).with_suffix('.txt') for x in wavnames]
     else: transcriptions = [transcription_path]
     
     w_set = set(x.stem for x in wavnames)
@@ -290,7 +292,7 @@ if __name__ == '__main__':
     
     if ood_words:
         raise RuntimeError(f'The following words were not found in the dictionary. Please add them to the dictionary and run the aligner again.\n{", ".join(ood_words)}')
-    
+
     quiet = args['quiet']
     
     filenames = list(zip(tgnames, wavnames, transcriptions))
@@ -299,9 +301,12 @@ if __name__ == '__main__':
         print('BEGINNING ALIGNMENT')
     
     overwrite = args['overwrite']
-    
+
     for m_I, m_name in enumerate(model_names, start=1):
-         
+
+        # if m_name.suffix == '.tf':
+        #     warnings.warn('TensorFlow has stopped supporting the tf format. Your models may need to be updated to the keras or h5 formats for long-term functionality.')
+        #     m = tf.keras.layers.TFSMLayer(m_name, call_endpoint='serving_default')
         m = load_model(m_name, compile=False)
         
         print(f'USING MODEL {m_name.name} ({m_I}/{len(model_names)})', flush=True)
@@ -326,7 +331,7 @@ if __name__ == '__main__':
                 tgname = tgname_base
             
             if tgname.is_file() and not overwrite: continue
-            
+
             yhat = m.predict(x, verbose=0)
             
             with open(transcription, 'r') as f:
@@ -337,7 +342,7 @@ if __name__ == '__main__':
             word_chain = [word2phone[w] for w in word_labels]
                 
             best_score = np.inf
-            
+
             check_variants = args['check_variants']
             
             # Iterate through pronunciation variants to choose best alignment
@@ -354,7 +359,7 @@ if __name__ == '__main__':
                     c = [x for x in c if x]
                 else:
                     this_word_labels = word_labels
-            
+
                 w_string = WordString(this_word_labels, c)
             
                 seq, M = force_align(w_string.collapsed_string, yhat)
@@ -367,7 +372,7 @@ if __name__ == '__main__':
                 if not check_variants: break
 
             make_textgrid(best_seq, tgname, duration, best_w_string, interpolate=use_interp, probs=best_M.T)
-        
+
     if use_ensemble:
         print('ENSEMBLING', flush=True)
         
@@ -401,7 +406,9 @@ if __name__ == '__main__':
                 tg.read(tg_name, round_digits=1000)
                 
             n_tgs = len(tgs)
+
             n_intervals = len(tgs[0].tiers[1].intervals)
+            duration = tgs[0].tiers[1].maxTime
             
             for i in range(n_intervals):
                 lab = tgs[0].tiers[1].intervals[i].mark
@@ -412,8 +419,8 @@ if __name__ == '__main__':
                 maxtime = statistics.mean(maxtimes)
                 
                 sd = statistics.stdev(maxtimes)
-                ci_lo = maxtime - 1.96 * sd
-                ci_hi = maxtime + 1.96 * sd
+                ci_lo = max(0, maxtime - 1.96 * sd)
+                ci_hi = min(maxtime + 1.96 * sd, duration)
                 if ci_lo == ci_hi:
                     ci_lo -= EPS
                     ci_hi += EPS
@@ -459,7 +466,7 @@ if __name__ == '__main__':
             ens_tg.write(ensemble_tg_path)
             
             all_tg_names += tg_names
-            
+
             if ensemble_table:
                 with open(f_path, 'a') as w:
                     

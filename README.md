@@ -8,9 +8,11 @@ accompanying journal article: [https://doi.org/10.1515/phon-2024-0015](https://d
 
 old arXiv pre-print of accomapnying paper: [https://arxiv.org/abs/2310.15425](https://arxiv.org/abs/2310.15425)
 
-This tool is still in a pre-release stage and has not been tested against a variety of data types. We welcome you to use it for your own work and report any issues you encounter. It is currently a command-line-only utility.
+This tool is under active development and has not been tested against a variety of data types. We welcome you to use it for your own work and report any issues you encounter. It is currently a command-line-only utility.
 
 At present, only a model for American English is provided. Future releases will include a training function to allow the model to be trained on new data. If you are working with data that is reasonably close to the phone set in American English, the aligner might still be useful for your needs.
+
+Currently, a 3.11 version of Python is required due to package version and trained model format compatibility.
 
 **Note:** Audio files **must** be sampled at 16 kHz for the best quality alignment, at the moment. This may be addressed in future releases.
 
