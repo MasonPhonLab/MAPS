@@ -135,44 +135,64 @@ def make_textgrid(seq, tgname, maxTime, words, interpolate=True, probs=None):
     tier.intervals.append(last_interval)
     
     if words.did_collapse:
-        unsplit_phones(tier, words)
-        
-    
+        unmerge_phones(tier, words)
+
     for i in range(len(tier.intervals)):
         x = words.phone_string[i]
         y = tier.intervals[i]
         if x != y.mark:
             tier.intervals[i].mark = x
+
+        # Prevent small boundary errors from numerical instability
+        if i > 0:
+            prev_end = tier.intervals[i].maxTime
+            curr_start = tier.intervals[i].minTime
+            if math.isclose(prev_end, curr_start) and not prev_end == curr_start:
+                prev_end.maxTime = curr_start.minTime
     
     word_tier = make_word_tier(tier, words)
     tg.tiers.append(word_tier)
     tg.tiers.append(tier)
     
     tg.write(tgname)
+
+def to_bucket_fmt(s):
+
+    s = [re.sub(r'[0-9]', '', x) for x in s]
+
+    buckets = []
+    prev = s[0]
+    count = 1
+    for x in s[1:]:
+        if x != prev:
+            buckets.append((prev, count))
+            count = 0
+        prev = x
+        count += 1
+    buckets.append((prev, count))
+    return buckets
     
-def unsplit_phones(tier, words):
-    
-    split_idxs = []
-    
-    phone_stringI = 0
-    
-    for col_i, p in enumerate(words.collapsed_string):
-    
-        unc_p = re.sub(r'[0-9]', '', words.phone_string[phone_stringI])
-        if p != unc_p:
-            split_idxs.append(col_i-1)
-            phone_stringI += 1
-        phone_stringI += 1
-    
-    # work in reverse order so that in-place modification of list and concomitant
-    # changes in later index numbers don't affect earlier ones
-    for i in split_idxs[::-1]:
-    
-        midpoint = (tier[i].minTime + tier[i].maxTime) / 2
-        new_interval = textgrid.Interval(minTime=midpoint, maxTime=tier[i].maxTime, mark=tier[i].mark)
-        tier[i].maxTime = midpoint
-        tier.intervals.insert(i+1, new_interval)
-        
+def unmerge_phones(tier, words):
+
+    collapsed_bucket = to_bucket_fmt(words.collapsed_string)
+    uncollapsed_bucket = to_bucket_fmt(words.phone_string)
+
+    intervals = []
+
+    for i, (c, u) in enumerate(zip(collapsed_bucket, uncollapsed_bucket)):
+
+        dur = tier.intervals[i].maxTime - tier.intervals[i].minTime
+        chunk_dur = dur / u[1]
+        mint = tier.intervals[i].minTime
+
+        for j in range(u[1]):
+            low = mint + j * chunk_dur
+            high = low + chunk_dur
+            interv = textgrid.Interval(minTime=low, maxTime=high, mark=c[0])
+            intervals.append(interv)
+
+    tier.intervals = intervals
+    return
     
 def make_word_tier(segment_tier, words):
 
@@ -314,6 +334,13 @@ if __name__ == '__main__':
         if not quiet: filenames = tqdm(filenames)
     
         for tgname_base, wavname, transcription in filenames:
+
+            if use_ensemble:
+                tgname = tgname_base.parent / tgname_base.parts[-1].replace('.TextGrid', f'_{m_name.stem}.TextGrid')
+            else:
+                tgname = tgname_base
+
+            if tgname.is_file() and not overwrite: continue
             
             sr, samples = wavfile.read(wavname)
             duration = samples.size / sr # convert samples to seconds
@@ -324,13 +351,6 @@ if __name__ == '__main__':
                 
             x = np.hstack((mfcc, delta, deltadelta))
             x = np.expand_dims(x, axis=0)
-        
-            if use_ensemble:
-                tgname = tgname_base.parent / tgname_base.parts[-1].replace('.TextGrid', f'_{m_name.stem}.TextGrid')
-            else:
-                tgname = tgname_base
-            
-            if tgname.is_file() and not overwrite: continue
 
             yhat = m.predict(x, verbose=0)
             
