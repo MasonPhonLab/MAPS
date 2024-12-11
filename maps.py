@@ -86,6 +86,8 @@ def make_textgrid(seq, tgname, maxTime, words, interpolate=True, probs=None):
     if len(seq) == 1:
         last_interval = textgrid.Interval(curr_dur, maxTime, seq[-1].phone)
         tier.intervals.append(last_interval)
+        word_tier = make_word_tier(tier, words)
+        tg.tiers.append(word_tier)
         tg.tiers.append(tier)
         tg.write(tgname)
         return
@@ -145,11 +147,12 @@ def make_textgrid(seq, tgname, maxTime, words, interpolate=True, probs=None):
 
         # Prevent small boundary errors from numerical instability
         if i > 0:
-            prev_end = tier.intervals[i].maxTime
+            prev_end = tier.intervals[i-1].maxTime
             curr_start = tier.intervals[i].minTime
+
             if math.isclose(prev_end, curr_start) and not prev_end == curr_start:
-                prev_end.maxTime = curr_start.minTime
-    
+                tier.intervals[i-1].maxTime = curr_start
+
     word_tier = make_word_tier(tier, words)
     tg.tiers.append(word_tier)
     tg.tiers.append(tier)
@@ -256,7 +259,7 @@ if __name__ == '__main__':
     
     model_path = Path(args['model'])
     if not model_path.suffix == '.tf':
-        model_names = [x for x in model_path.iterdir() if x.suffix == '.tf']
+        model_names = sorted([x for x in model_path.iterdir() if x.suffix == '.tf'])
         if not model_names:
             raise RuntimeError(f'Could not find a model named {model_path}, nor any models within that path. Please check spelling and file extensions and try again.')
     else:
@@ -319,7 +322,7 @@ if __name__ == '__main__':
     
     if not quiet:
         print('BEGINNING ALIGNMENT')
-    
+
     overwrite = args['overwrite']
 
     for m_I, m_name in enumerate(model_names, start=1):
@@ -357,13 +360,16 @@ if __name__ == '__main__':
             with open(transcription, 'r') as f:
                 word_labels = f.read().upper().split()
                 
-            if add_sil:
+            if add_sil and duration >= 0.045:
                 word_labels = ['sil'] + word_labels + ['sil']
+            elif add_sil:
+                warnings.warn(f'Silence segments not added to ends of transcription for {wavname} because duration of {duration} s is too short to have silence padding.')
             word_chain = [word2phone[w] for w in word_labels]
                 
             best_score = np.inf
 
             check_variants = args['check_variants']
+            best_w_string = 0
             
             # Iterate through pronunciation variants to choose best alignment
             # TODO: This iteration only checks segmental differences; stress differences won't get evaluated
@@ -381,15 +387,48 @@ if __name__ == '__main__':
                     this_word_labels = word_labels
 
                 w_string = WordString(this_word_labels, c)
-            
+                if add_sil and len(w_string.collapsed_string) > (duration - 0.015) / 0.01:
+                    if this_word_labels[0] == 'sil':
+                        this_word_labels = this_word_labels[1:]
+                        c = c[1:]
+                        warnings.warn(f'File {wavname} with duration {duration} too short for adding silence to transcription {w_string.collapsed_string}. Removing first silence label.')
+                    if this_word_labels[-1] == 'sil':
+                        this_word_labels = this_word_labels[:-1]
+                        c = c[:-1]
+                        warnings.warn(f'File {wavname} with duration {duration} too short for adding silence to transcription {w_string.collapsed_string}. Removing final silence label.')
+
+                    w_string = WordString(this_word_labels, c)
+
+                if best_w_string == 0: best_w_string = w_string
+
                 seq, M = force_align(w_string.collapsed_string, yhat)
                 if M[-1, -1] < best_score:
                     best_seq = seq
                     best_M = M
                     best_score = M[-1, -1]
                     best_w_string = w_string
-                    
+
                 if not check_variants: break
+
+            n_segs = len(best_w_string.collapsed_string)
+            if n_segs > 1 and duration < 0.015 + (0.01 * n_segs):
+                warnings.warn(f'File {wavname} with duration {duration} too short for collapsed {len(best_w_string.collapsed_string)}-segment best transcription {best_w_string.collapsed_string}. Assigning equal durations for each segment.')
+
+                intervals = []
+                for i, x in enumerate(best_w_string.collapsed_string):
+                    d_min = i / len(best_w_string.collapsed_string) * duration
+                    d_max = (i+1) / len(best_w_string.collapsed_string) * duration
+
+                    intervals.append(textgrid.Interval(minTime=d_min, maxTime=d_max, mark=x))
+
+                tier = textgrid.IntervalTier('segments')
+                tier.intervals = intervals
+                word_tier = make_word_tier(tier, best_w_string)
+                tg = textgrid.TextGrid()
+                tg.tiers.append(word_tier)
+                tg.tiers.append(tier)
+                tg.write(tgname)
+                continue
 
             make_textgrid(best_seq, tgname, duration, best_w_string, interpolate=use_interp, probs=best_M.T)
 
@@ -397,7 +436,7 @@ if __name__ == '__main__':
         print('ENSEMBLING', flush=True)
         
         if ensemble_table:
-            f_path = f'{wavname_path.name}_{model_path.name}_alignment_results.tsv'
+            f_path = f'{"_".join(wavname_path.parts)}_{model_path.name}_alignment_results.tsv'
             col_names = ['file', 'word', 'word_mintime', 'word_maxtime', 'segment', 'segment_mintime', 'segment_maxtime', 'segment_sd', 'segment_lo_ci', 'segment_hi_ci']
             with open(f_path, 'a') as w:
                 w.write('\t'.join(col_names) + '\n')
@@ -499,7 +538,7 @@ if __name__ == '__main__':
                         if x_I == len(intervals) - 1:
                             segment_lo_ci = x.minTime
                             segment_hi_ci = x.maxTime
-                            segment_se = 0
+                            segment_sd = 0
                         else:
                             segment_lo_ci = cis[x_I * 2].time
                             segment_hi_ci = cis[x_I * 2 + 1].time
@@ -510,7 +549,8 @@ if __name__ == '__main__':
                         
                         w.write(s + '\n')
                         
-                        if x.maxTime == word.maxTime and x_I < len(intervals) - 1: word = next(word_iter)
+                        if x.maxTime == word.maxTime and x_I < len(intervals) - 1:
+                            word = next(word_iter)
             
         # Remove ensemble files if flagged to remove
         if rm_ensemble:
