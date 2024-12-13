@@ -86,6 +86,7 @@ def make_textgrid(seq, tgname, maxTime, words, interpolate=True, probs=None):
     if len(seq) == 1:
         last_interval = textgrid.Interval(curr_dur, maxTime, seq[-1].phone)
         tier.intervals.append(last_interval)
+        if words.did_collapse: unmerge_phones(tier, words)
         word_tier = make_word_tier(tier, words)
         tg.tiers.append(word_tier)
         tg.tiers.append(tier)
