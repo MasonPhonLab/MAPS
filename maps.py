@@ -476,11 +476,11 @@ if __name__ == '__main__':
                 mintimes = [tgs[tier_I].tiers[1].intervals[i].minTime for tier_I in range(n_tgs)]
                 maxtimes = [tgs[tier_I].tiers[1].intervals[i].maxTime for tier_I in range(n_tgs)]
                 
-                mintime = statistics.mean(mintimes)
-                maxtime = statistics.mean(maxtimes)
+                mintime = statistics.median(mintimes)
+                maxtime = statistics.median(maxtimes)
                 
                 sd = statistics.stdev(maxtimes)
-                se = sd / math.sqrt(len(model_names))
+                se = 1.253 * sd / math.sqrt(len(model_names))
                 ci_lo = max(0, maxtime - 1.96 * se)
                 ci_hi = min(maxtime + 1.96 * se, duration)
                 if ci_lo == ci_hi:
@@ -503,8 +503,8 @@ if __name__ == '__main__':
                 mintimes = [tgs[tier_I].tiers[0].intervals[i].minTime for tier_I in range(n_tgs)]
                 maxtimes = [tgs[tier_I].tiers[0].intervals[i].maxTime for tier_I in range(n_tgs)]
                 
-                mintime = statistics.mean(mintimes)
-                maxtime = statistics.mean(maxtimes)
+                mintime = statistics.median(mintimes)
+                maxtime = statistics.median(maxtimes)
                 
                 word_interval = textgrid.Interval(minTime=mintime, maxTime=maxtime, mark=lab)
                 word_intervals.append(word_interval)
@@ -539,7 +539,7 @@ if __name__ == '__main__':
                     
                     for x_I, x in enumerate(intervals):
                         if x_I == len(intervals) - 1:
-                            segment_lo_ci = x.minTime
+                            segment_lo_ci = x.maxTime
                             segment_hi_ci = x.maxTime
                             segment_se = 0
                         else:
