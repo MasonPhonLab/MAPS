@@ -14,6 +14,7 @@ from args import build_arg_parser
 import statistics
 import math
 import warnings
+import natsort
 
 EPS = 1e-8
 
@@ -260,7 +261,7 @@ if __name__ == '__main__':
     
     model_path = Path(args['model'])
     if not model_path.suffix == '.tf':
-        model_names = sorted([x for x in model_path.iterdir() if x.suffix == '.tf'])
+        model_names = natsort.natsorted([x for x in model_path.iterdir() if x.suffix == '.tf'])
         if not model_names:
             raise RuntimeError(f'Could not find a model named {model_path}, nor any models within that path. Please check spelling and file extensions and try again.')
     else:
