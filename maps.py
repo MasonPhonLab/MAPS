@@ -438,7 +438,7 @@ if __name__ == '__main__':
         
         if ensemble_table:
             f_path = f'{"_".join(wavname_path.parts)}_{model_path.name}_alignment_results.tsv'
-            col_names = ['file', 'word', 'word_mintime', 'word_maxtime', 'segment', 'segment_mintime', 'segment_maxtime', 'segment_sd', 'segment_lo_ci', 'segment_hi_ci']
+            col_names = ['file', 'word', 'word_mintime', 'word_maxtime', 'segment', 'segment_mintime', 'segment_maxtime', 'segment_se', 'segment_lo_ci', 'segment_hi_ci']
             with open(f_path, 'a') as w:
                 w.write('\t'.join(col_names) + '\n')
         
@@ -479,8 +479,9 @@ if __name__ == '__main__':
                 maxtime = statistics.mean(maxtimes)
                 
                 sd = statistics.stdev(maxtimes)
-                ci_lo = max(0, maxtime - 1.96 * sd)
-                ci_hi = min(maxtime + 1.96 * sd, duration)
+                se = sd / math.sqrt(len(model_names))
+                ci_lo = max(0, maxtime - 1.96 * se)
+                ci_hi = min(maxtime + 1.96 * se, duration)
                 if ci_lo == ci_hi:
                     ci_lo -= EPS
                     ci_hi += EPS
@@ -539,13 +540,13 @@ if __name__ == '__main__':
                         if x_I == len(intervals) - 1:
                             segment_lo_ci = x.minTime
                             segment_hi_ci = x.maxTime
-                            segment_sd = 0
+                            segment_se = 0
                         else:
                             segment_lo_ci = cis[x_I * 2].time
                             segment_hi_ci = cis[x_I * 2 + 1].time
-                            segment_sd = (segment_hi_ci - segment_lo_ci) / (2 * 1.96)
+                            segment_se = (segment_hi_ci - segment_lo_ci) / (2 * 1.96)
                         
-                        s = [fname, word.mark, word.minTime, word.maxTime, x.mark, x.minTime, x.maxTime, segment_sd, segment_lo_ci, segment_hi_ci]
+                        s = [fname, word.mark, word.minTime, word.maxTime, x.mark, x.minTime, x.maxTime, segment_se, segment_lo_ci, segment_hi_ci]
                         s = '\t'.join([str(z) for z in s])
                         
                         w.write(s + '\n')
