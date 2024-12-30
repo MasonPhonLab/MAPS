@@ -37,7 +37,7 @@ def align(seq, probs):
     
     M = warp(range(nrow), range(ncol), distance)
     
-    alignment = backtrack(M[1:, 1:], seq)
+    alignment = traceback(M[1:, 1:], seq)
     return alignment, M[1:, 1:]
     
 def warp(S, T, d):
@@ -61,7 +61,7 @@ def warp(S, T, d):
             
     return M
     
-def backtrack(M, sequence):
+def traceback(M, sequence):
 
     nrow, ncol = M.shape
     seq = [nrow-1]
