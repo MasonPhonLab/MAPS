@@ -5,3 +5,4 @@ tqdm
 textgrid
 python_speech_features
 natsort
+soxr
