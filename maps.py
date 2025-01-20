@@ -15,6 +15,8 @@ import statistics
 import math
 import warnings
 import natsort
+import soxr
+import tempfile
 
 EPS = 1e-8
 
@@ -258,6 +260,20 @@ if __name__ == '__main__':
         wavnames = [wavname_path / Path(x) for x in os.listdir(wavname_path) if x.lower().endswith('.wav')]
         wavnames.sort()
     else: wavnames = [wavname_path]
+
+    resample = args['resample']
+
+    if resample:
+        resampled_wavnames = list()
+        print('RESAMPLING TO 16,000 HZ...')
+        temp_d = Path(tempfile.mkdtemp())
+        for wname in tqdm(wavnames):
+            sr, samples = wavfile.read(wname)
+            samples = soxr.resample(samples, sr, 16_000)
+            out_path = temp_d / wname.name
+            wavfile.write(out_path, 16_000, samples)
+            resampled_wavnames.append(out_path)
+        wavnames = resampled_wavnames
     
     model_path = Path(args['model'])
     if not model_path.suffix == '.tf':
@@ -349,7 +365,7 @@ if __name__ == '__main__':
             
             sr, samples = wavfile.read(wavname)
             duration = samples.size / sr # convert samples to seconds
-                
+
             mfcc = psf.mfcc(samples, sr, winstep=FRAME_INTERVAL)
             delta = psf.delta(mfcc, 2)
             deltadelta = psf.delta(delta, 2)

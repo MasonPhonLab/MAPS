@@ -13,6 +13,7 @@ def build_arg_parser():
     p.add_argument('--model', help='A tf format TensorFlow model to use for alignment; if a folder with multiple models is given, all models will be used for ensemble alignment with confidence intervals', required=True)
     p.add_argument('--dict', help='A grapheme-to-phoneme dictionary like the CMU Pronouncing Dictionary', required=True)
     p.add_argument('--interp', default='true', choices=['true', 'false'], help='Whether to use interpolation or not. Default is set to true')
+    p.add_argument('--resample', action='store_true', help='Resamples audio to 16,000 Hz and stores the resmampled files in a temporary folder while alignment is being performed.')
     p.add_argument('--rm-ensemble', action='store_true', help='Flags the program to remove the intermediate TextGrids created during ensemble alignment')
     p.add_argument('--sil', default='true', choices=['true', 'false'], help='Whether to add silences to beginning and end of transcription. Default is set to true')
     p.add_argument('--quiet', action='store_true', help='Suppresses info messages when flag is present; does not accept a value')
