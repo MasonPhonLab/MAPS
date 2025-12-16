@@ -321,7 +321,7 @@ if __name__ == '__main__':
     use_interp = (args['interp'] == 'true')        
     add_sil = (args['sil'] == 'true')
     
-    tgnames = [x.with_suffix('.TextGrid') for x in wavnames]
+    tgnames = [wavname_path / (x.stem + '.TextGrid') for x in wavnames]
     
     word_list = []
     for t in transcriptions:
