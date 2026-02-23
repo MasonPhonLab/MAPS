@@ -54,6 +54,16 @@ options:
   --ensemble-table      Flags program to write ensemble results to a table. Appends to a filename based on
                         path to the audio and the path to the model. You may need to delete rows from
                         previous runs if they are not needed.
+  --variant-limit VARIANT_LIMIT
+                        If value given, limits the number of variants checked to the passed value.
+                        Will have no effect without the --check-variants flag
+  --variant-shuffle     If set, shuffles the variants so as to not get stuck with only checking
+                        variants at one end of an utterance under the limit. In the case of
+                        massive combinatoric explostion, this flag may cause memory issues when it
+                        collects the possible variant combinations into a list and shuffles them.
+  --variant-seed VARIANT_SEED
+                        If value given, uses passed value as the random seed for shuffling the
+                        variants for reproducibility.
 
 ```
 
