@@ -410,6 +410,7 @@ if __name__ == '__main__':
                 
             tried_variants = set()
                             
+            variant_counter = 0
             
             # Iterate through pronunciation variants to choose best alignment
             # TODO: This iteration only checks segmental differences; stress differences won't get evaluated
@@ -417,7 +418,7 @@ if __name__ == '__main__':
             #
             # This method will very quickly cause combinatoric explosion since function words have
             # several variants
-            for i, c in enumerate(chains):
+            for c in chains:
             
                 # Remove empty 'sil' options
                 if add_sil:
@@ -453,10 +454,8 @@ if __name__ == '__main__':
                     best_score = M[-1, -1]
                     best_w_string = w_string
 
-                # i == variant_limit-2 will put it at just before the iteration index turns over into
-                # the value of the limit, and since the check is at the end of the loop, this will
-                # produce correct behavior
-                if (not check_variants) or (i >= variant_limit-2): break
+                variant_counter += 1
+                if (not check_variants) or (variant_counter == variant_limit): break
                 
                 
 
