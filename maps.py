@@ -18,6 +18,7 @@ import natsort
 import soxr
 import tempfile
 import json
+import random
 
 EPS = 1e-8
 
@@ -323,7 +324,7 @@ if __name__ == '__main__':
     use_interp = (args['interp'] == 'true')        
     add_sil = (args['sil'] == 'true')
     
-    tgnames = [x.with_suffix('.TextGrid') for x in wavnames]
+    tgnames = [wavname_path / (x.stem + '.TextGrid') for x in wavnames]
     
     word_list = []
     for t in transcriptions:
@@ -397,7 +398,29 @@ if __name__ == '__main__':
             best_score = np.inf
 
             check_variants = args['check_variants']
+            variant_shuffle = args['variant_shuffle']
+            
             best_w_string = 0
+            
+            if variant_shuffle:
+                variant_seed = args['variant_seed']
+                if variant_seed is None:
+                    r = random.Random()
+                else:
+                    r = random.Random(variant_seed)
+                chains = list(itertools.product(*word_chain))
+                r.shuffle(chains)
+            else:
+                chains = itertools.product(*word_chain)
+            
+            
+            variant_limit = args['variant_limit']
+            if variant_limit is None:
+                variant_limit = float('inf')
+                
+            tried_variants = set()
+                            
+            variant_counter = 0
             
             # Iterate through pronunciation variants to choose best alignment
             # TODO: This iteration only checks segmental differences; stress differences won't get evaluated
@@ -405,7 +428,7 @@ if __name__ == '__main__':
             #
             # This method will very quickly cause combinatoric explosion since function words have
             # several variants
-            for c in itertools.product(*word_chain):
+            for c in chains:
             
                 # Remove empty 'sil' options
                 if add_sil:
@@ -429,6 +452,11 @@ if __name__ == '__main__':
 
                 if best_w_string == 0: best_w_string = w_string
 
+                checking = ' '.join(w_string.collapsed_string)
+                if checking in tried_variants:
+                    continue
+                tried_variants.add(checking)
+
                 seq, M = force_align(w_string.collapsed_string, yhat)
                 if M[-1, -1] < best_score:
                     best_seq = seq
@@ -436,7 +464,10 @@ if __name__ == '__main__':
                     best_score = M[-1, -1]
                     best_w_string = w_string
 
-                if not check_variants: break
+                variant_counter += 1
+                if (not check_variants) or (variant_counter == variant_limit): break
+                
+                
 
             n_segs = len(best_w_string.collapsed_string)
             if n_segs > 1 and duration < 0.015 + (0.01 * n_segs):

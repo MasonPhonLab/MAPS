@@ -16,7 +16,7 @@ Until the documentation pages are written, this contents of this folder will dem
 From the root folder of this repo, the aligner can be run on the demo data with the following command:
 
 ```bash
-python maps.py --audio=demo_files/dark_suit_sentence_16khz.wav --text=demo_files/dark_suit_sentence_16khz.txt --dict=demo_files/sample_dictionary.txt
+python maps.py --audio=demo_files/dark_suit_sentence_16khz.wav --text=demo_files/dark_suit_sentence_16khz.txt --dict=demo_files/sample_dictionary.txt --model=timbuck_eng.tf
 ```
 
 This command will create the dark_suit_sentence_16khz.TextGrid file, which can be viewed, along with the wav file, using [Praat](https://www.fon.hum.uva.nl/praat/).
