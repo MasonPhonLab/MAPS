@@ -17,6 +17,7 @@ import warnings
 import natsort
 import soxr
 import tempfile
+import json
 import random
 
 EPS = 1e-8
@@ -287,6 +288,7 @@ if __name__ == '__main__':
     use_ensemble = len(model_names) > 1
     rm_ensemble = args['rm_ensemble']
     ensemble_table = args['ensemble_table']
+    ensemble_json = args['ensemble_json']
     
     transcription_path = Path(args['text'])
     
@@ -354,6 +356,8 @@ if __name__ == '__main__':
         print(f'USING MODEL {m_name.name} ({m_I}/{len(model_names)})', flush=True)
         
         if not quiet: filenames = tqdm(filenames)
+
+        have_stereo_warned = False
     
         for tgname_base, wavname, transcription in filenames:
 
@@ -365,6 +369,12 @@ if __name__ == '__main__':
             if tgname.is_file() and not overwrite: continue
             
             sr, samples = wavfile.read(wavname)
+            if samples.ndim == 2:
+                samples = samples[:,0]
+                if not have_stereo_warned:
+                    warnings.warn('Stereo files were found. Automatically extracting the left (first) channel to make mono files.')
+                    have_stereo_warned = True
+
             duration = samples.size / sr # convert samples to seconds
 
             mfcc = psf.mfcc(samples, sr, winstep=FRAME_INTERVAL)
@@ -489,6 +499,8 @@ if __name__ == '__main__':
             col_names = ['file', 'word', 'word_mintime', 'word_maxtime', 'segment', 'segment_mintime', 'segment_maxtime', 'segment_lo_ci', 'segment_hi_ci']
             with open(f_path, 'a') as w:
                 w.write('\t'.join(col_names) + '\n')
+        if ensemble_json:
+            j_path = f'{"_".join(wavname_path.parts)}_{model_path.name}_alignment_results.json'
         
         all_tg_names = list()
         for tgname_base, _, _ in tqdm(filenames):
@@ -575,30 +587,49 @@ if __name__ == '__main__':
             
             all_tg_names += tg_names
 
-            if ensemble_table:
-                with open(f_path, 'a') as w:
-                    
-                    fname = ensemble_tg_path.name
-                    
-                    word_iter = iter(word_intervals)
-                    word = next(word_iter)
-                    
-                    for x_I, x in enumerate(intervals):
-                        if x_I == len(intervals) - 1:
-                            segment_lo_ci = x.maxTime
-                            segment_hi_ci = x.maxTime
-                        else:
-                            segment_lo_ci = cis[x_I * 2].time
-                            segment_hi_ci = cis[x_I * 2 + 1].time
-                        
-                        s = [fname, word.mark, word.minTime, word.maxTime, x.mark, x.minTime, x.maxTime, segment_lo_ci, segment_hi_ci]
-                        s = '\t'.join([str(z) for z in s])
-                        
-                        w.write(s + '\n')
-                        
-                        if x.maxTime == word.maxTime and x_I < len(intervals) - 1:
-                            word = next(word_iter)
-            
+            if ensemble_table or ensemble_json:
+
+                fname = ensemble_tg_path.name
+                j_path = ensemble_tg_path.with_suffix('.json')
+
+                word_iter = iter(word_intervals)
+                word = next(word_iter)
+
+                for x_I, x in enumerate(intervals):
+                    if x_I == len(intervals) - 1:
+                        segment_lo_ci = x.maxTime
+                        segment_hi_ci = x.maxTime
+                    else:
+                        segment_lo_ci = cis[x_I * 2].time
+                        segment_hi_ci = cis[x_I * 2 + 1].time
+
+                    s = [fname, word.mark, word.minTime, word.maxTime, x.mark, x.minTime, x.maxTime, segment_lo_ci, segment_hi_ci]
+                    s = '\t'.join([str(z) for z in s])
+
+                    if ensemble_table:
+                        with open(f_path, 'a') as w:
+                            w.write(s + '\n')
+
+                    if ensemble_json:
+
+                        ens_j = {'file' : fname,
+                                'word' : word.mark,
+                                'word_mintime' : word.minTime,
+                                'word_maxtime' : word.maxTime,
+                                'segment' : x.mark,
+                                'segment_mintime' : x.minTime,
+                                'segment_maxtime' : x.maxTime,
+                                'segment_lo_ci' : segment_lo_ci,
+                                'segment_hi_ci' : segment_hi_ci}
+
+                        with open(j_path, 'a') as w:
+
+                            s = json.dumps(ens_j, indent=4)
+                            w.write(s)
+
+                    if x.maxTime == word.maxTime and x_I < len(intervals) - 1:
+                        word = next(word_iter)
+
         # Remove ensemble files if flagged to remove
         if rm_ensemble:
             for n in all_tg_names: n.unlink(missing_ok=True)

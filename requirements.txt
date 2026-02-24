@@ -1,6 +1,6 @@
 tensorflow===2.12.1
 scipy
-numpy
+numpy==1.24.3
 tqdm
 textgrid
 python_speech_features
