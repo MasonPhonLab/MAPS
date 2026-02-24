@@ -54,6 +54,9 @@ options:
   --ensemble-table      Flags program to write ensemble results to a table. Appends to a filename based on
                         path to the audio and the path to the model. You may need to delete rows from
                         previous runs if they are not needed.
+  --ensemble-json       Flags program to write ensemble results to json files. Appends to filename based on the
+                        path of the audio and the path to the model. You may need to delete the entries from
+                        previous runs if they are not needed.
   --variant-limit VARIANT_LIMIT
                         If value given, limits the number of variants checked to the passed value.
                         Will have no effect without the --check-variants flag
